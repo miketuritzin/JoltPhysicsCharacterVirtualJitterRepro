@@ -5,12 +5,21 @@
 #include <TestFramework.h>
 
 #include <Tests/Character/CharacterVirtualTest.h>
+#include <Jolt/Core/StreamWrapper.h>
+#include <Jolt/Physics/PhysicsScene.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Layers.h>
 #include <Utils/Log.h>
 #include <Renderer/DebugRendererImp.h>
 #include <Application/DebugUI.h>
+
+JPH_SUPPRESS_WARNINGS_STD_BEGIN
+#ifdef JPH_PLATFORM_WINDOWS
+#include <commdlg.h>
+#endif
+#include <fstream>
+JPH_SUPPRESS_WARNINGS_STD_END
 
 //#define CHARACTER_TRACE_CONTACTS
 
@@ -19,9 +28,42 @@ JPH_IMPLEMENT_RTTI_VIRTUAL(CharacterVirtualTest)
 	JPH_ADD_BASE_CLASS(CharacterVirtualTest, CharacterBaseTest)
 }
 
+static void LoadSnapshot(JPH::PhysicsSystem* physicsSystem)
+{
+    char file_name[] = "charactervirtualtest-snapshot.bin";
+
+    ifstream stream(file_name, ifstream::in | ifstream::binary);
+    if (!stream.is_open())
+        FatalError("Unable to open file");
+
+    StreamInWrapper wrapper(stream);
+    PhysicsScene::PhysicsSceneResult result = PhysicsScene::sRestoreFromBinaryState(wrapper);
+    if (result.HasError())
+            FatalError(result.GetError().c_str());
+    Ref<PhysicsScene> scene = result.Get();
+
+    bool override_layers = true;
+
+    for (BodyCreationSettings &settings : scene->GetBodies())
+    {
+        if (override_layers)
+        {
+            // Override the layer so that all static objects are in the non-moving layer and everything else is in the moving layer
+            if (settings.mMotionType == EMotionType::Static)
+                settings.mObjectLayer = Layers::NON_MOVING;
+            else
+                settings.mObjectLayer = Layers::MOVING;
+        }
+    }
+
+    scene->CreateBodies(physicsSystem);
+}
+
 void CharacterVirtualTest::Initialize()
 {
 	CharacterBaseTest::Initialize();
+
+	LoadSnapshot(mPhysicsSystem);
 
 	// Create 'player' character
 	Ref<CharacterVirtualSettings> settings = new CharacterVirtualSettings();
@@ -36,7 +78,7 @@ void CharacterVirtualTest::Initialize()
 	settings->mEnhancedInternalEdgeRemoval = sEnhancedInternalEdgeRemoval;
 	settings->mInnerBodyShape = sCreateInnerBody? mInnerStandingShape : nullptr;
 	settings->mInnerBodyLayer = Layers::MOVING;
-	mCharacter = new CharacterVirtual(settings, RVec3::sZero(), Quat::sIdentity(), 0, mPhysicsSystem);
+	mCharacter = new CharacterVirtual(settings, RVec3(0.0f, 30.0f, 0.0f), Quat::sIdentity(), 0, mPhysicsSystem);
 	mCharacter->SetCharacterVsCharacterCollision(&mCharacterVsCharacterCollision);
 	mCharacterVsCharacterCollision.Add(mCharacter);
 
